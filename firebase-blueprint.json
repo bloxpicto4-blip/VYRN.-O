@@ -1,0 +1,377 @@
+{
+  "entities": {
+    "User": {
+      "title": "User Profile",
+      "description": "User profile with role-based access and privacy settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "minLength": 1, "maxLength": 50 },
+        "displayName": { "type": "string", "maxLength": 100 },
+        "email": { "type": "string", "maxLength": 200 },
+        "role": { "type": "string", "enum": ["admin", "member", "approved"] },
+        "isApproved": { "type": "boolean" },
+        "avatarUrl": { "type": "string", "maxLength": 1000 },
+        "bio": { "type": "string", "maxLength": 1000 },
+        "mustChangePassword": { "type": "boolean" },
+        "privacySettings": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "username", "role", "isApproved", "createdAt"]
+    },
+    "UserStats": {
+      "title": "Public Player Stats & Presence",
+      "description": "Non-PII points, XP, level, achievements, and real-time online presence",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "avatarUrl": { "type": "string", "maxLength": 1000 },
+        "points": { "type": "number" },
+        "xp": { "type": "number" },
+        "level": { "type": "number" },
+        "gamesPlayed": { "type": "number" },
+        "winsCount": { "type": "number" },
+        "unlockedAchievements": { "type": "array" },
+        "isOnline": { "type": "boolean" },
+        "currentRoomId": { "type": "string", "maxLength": 128 },
+        "lastClaimId": { "type": "string", "maxLength": 256 },
+        "lastSeenAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "points", "xp", "level", "gamesPlayed", "winsCount", "isOnline", "updatedAt"]
+    },
+    "Achievement": {
+      "title": "Platform Achievement",
+      "description": "Unlockable achievement definition with points reward",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "description": { "type": "string", "maxLength": 400 },
+        "icon": { "type": "string", "maxLength": 40 },
+        "pointsReward": { "type": "number" },
+        "category": { "type": "string", "enum": ["play", "social", "multiplayer", "collector"] },
+        "requirementType": { "type": "string", "enum": ["games_played", "wins_count", "comments_count", "favorites_count", "points_total", "rooms_joined"] },
+        "requirementTarget": { "type": "number" },
+        "isActive": { "type": "boolean" }
+      },
+      "required": ["id", "title", "pointsReward", "category", "requirementType", "requirementTarget", "isActive"]
+    },
+    "ContentItem": {
+      "title": "Content Item",
+      "description": "Universal creative entity representing games, applications, projects, books, or podcasts",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 200 },
+        "description": { "type": "string", "maxLength": 5000 },
+        "summary": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["game", "app", "project", "book", "podcast"] },
+        "category": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "coverImage": { "type": "string", "maxLength": 2000 },
+        "galleryImages": { "type": "array" },
+        "bannerImage": { "type": "string", "maxLength": 2000 },
+        "status": { "type": "string", "enum": ["published", "draft", "archived"] },
+        "audience": { "type": "string", "enum": ["public", "members", "approved"] },
+        "creator": { "type": "string", "maxLength": 100 },
+        "isFeatured": { "type": "boolean" },
+        "isEditorsPick": { "type": "boolean" },
+        "likesCount": { "type": "number" },
+        "viewsCount": { "type": "number" },
+        "downloadsCount": { "type": "number" },
+        "commentsEnabled": { "type": "boolean" },
+        "tags": { "type": "array" },
+        "newBadge": { "type": "object" },
+        "customFields": { "type": "object" },
+        "gameConfig": { "type": "object" },
+        "appConfig": { "type": "object" },
+        "projectConfig": { "type": "object" },
+        "bookConfig": { "type": "object" },
+        "podcastConfig": { "type": "object" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "title", "slug", "type", "category", "coverImage", "status", "audience", "createdAt"]
+    },
+    "Section": {
+      "title": "Dynamic Section",
+      "description": "Configurable content section on the platform homepage",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "description": { "type": "string", "maxLength": 500 },
+        "icon": { "type": "string", "maxLength": 100 },
+        "coverImage": { "type": "string", "maxLength": 2000 },
+        "bannerImage": { "type": "string", "maxLength": 2000 },
+        "accentColor": { "type": "string", "maxLength": 30 },
+        "layoutType": { "type": "string", "enum": ["carousel", "editorial", "bento", "grid", "media_showcase"] },
+        "filterType": { "type": "string", "enum": ["all", "featured", "fresh_drops", "hidden_gems", "editors_picks", "category", "custom"] },
+        "categoryTarget": { "type": "string", "maxLength": 100 },
+        "customItemIds": { "type": "array" },
+        "sortOrder": { "type": "number" },
+        "isEnabled": { "type": "boolean" },
+        "isDraft": { "type": "boolean" },
+        "audience": { "type": "string", "enum": ["public", "members", "approved"] }
+      },
+      "required": ["id", "name", "slug", "accentColor", "layoutType", "filterType", "sortOrder", "isEnabled"]
+    },
+    "GameCategory": {
+      "title": "Game Category",
+      "description": "Content and game classification taxonomy item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "name": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "slug": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "type": { "type": "string", "enum": ["game", "app", "project", "book", "podcast"] },
+        "description": { "type": "string", "maxLength": 500 }
+      },
+      "required": ["id", "name", "slug", "type"]
+    },
+    "PlatformSettings": {
+      "title": "Platform Settings",
+      "description": "Global platform branding and behavior configuration",
+      "type": "object",
+      "properties": {
+        "brandName": { "type": "string", "minLength": 1, "maxLength": 60 },
+        "brandTagline": { "type": "string", "maxLength": 200 },
+        "primaryAccent": { "type": "string", "maxLength": 30 },
+        "secondaryAccent": { "type": "string", "maxLength": 30 },
+        "showIntroAnimation": { "type": "boolean" },
+        "allowGuestInteractions": { "type": "boolean" },
+        "commentModerationRequired": { "type": "boolean" },
+        "maintenanceMode": { "type": "boolean" }
+      },
+      "required": ["brandName", "brandTagline", "primaryAccent", "showIntroAnimation", "allowGuestInteractions", "commentModerationRequired", "maintenanceMode"]
+    },
+    "Comment": {
+      "title": "Comment Item",
+      "description": "User comment on a content item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "contentId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "username": { "type": "string", "maxLength": 50 },
+        "userDisplayName": { "type": "string", "maxLength": 100 },
+        "userAvatar": { "type": "string", "maxLength": 1000 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 1500 },
+        "parentId": { "type": "string", "maxLength": 128 },
+        "isApproved": { "type": "boolean" },
+        "isReported": { "type": "boolean" },
+        "reportReason": { "type": "string", "maxLength": 500 },
+        "likesCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "contentId", "userId", "content", "isApproved", "isReported", "createdAt"]
+    },
+    "Favorite": {
+      "title": "User Favorite",
+      "description": "Bookmark linking a user to a published content item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "contentId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "contentId", "createdAt"]
+    },
+    "Like": {
+      "title": "Content Like",
+      "description": "Deterministic like record linking a user to a content item",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "contentId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "contentId", "createdAt"]
+    },
+    "Notification": {
+      "title": "In-App Notification",
+      "description": "Platform broadcast or user-specific notification",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "title": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "message": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "linkUrl": { "type": "string", "maxLength": 500 },
+        "type": { "type": "string", "enum": ["system", "reply", "release", "announcement"] },
+        "isRead": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "title", "message", "type", "isRead", "createdAt"]
+    },
+    "GameRoom": {
+      "title": "Multiplayer Game Room",
+      "description": "Real-time multiplayer lobby and match state",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "code": { "type": "string", "minLength": 4, "maxLength": 16 },
+        "title": { "type": "string", "minLength": 1, "maxLength": 120 },
+        "gameId": { "type": "string", "maxLength": 128 },
+        "gameTitle": { "type": "string", "minLength": 1, "maxLength": 160 },
+        "hostId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "hostName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "status": { "type": "string", "enum": ["waiting", "playing", "finished"] },
+        "maxPlayers": { "type": "number" },
+        "isPrivate": { "type": "boolean" },
+        "playerCount": { "type": "number" },
+        "winnerId": { "type": "string", "maxLength": 128 },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "code", "title", "gameTitle", "hostId", "hostName", "status", "maxPlayers", "isPrivate", "playerCount", "createdAt", "updatedAt"]
+    },
+    "RoomPlayer": {
+      "title": "Room Player",
+      "description": "Participant state inside a multiplayer game room",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "roomId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "avatarUrl": { "type": "string", "maxLength": 1000 },
+        "isReady": { "type": "boolean" },
+        "score": { "type": "number" },
+        "joinedAt": { "type": "string", "format": "date-time" },
+        "lastPingAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "roomId", "displayName", "isReady", "score", "joinedAt", "lastPingAt"]
+    },
+    "RoomMessage": {
+      "title": "Room Chat Message",
+      "description": "In-room chat message",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "roomId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "displayName": { "type": "string", "minLength": 1, "maxLength": 100 },
+        "content": { "type": "string", "minLength": 1, "maxLength": 500 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "roomId", "userId", "displayName", "content", "createdAt"]
+    },
+    "AdminRecord": {
+      "title": "Admin Record",
+      "description": "Trusted admin allowlist document keyed by Firebase Auth UID",
+      "type": "object",
+      "properties": {
+        "uid": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "email": { "type": "string", "maxLength": 200 },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["uid", "email", "createdAt"]
+    },
+    "RewardClaim": {
+      "title": "Immutable Reward Claim Ledger",
+      "description": "Deterministic single-use reward ledger paired atomically with userStats",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "claimType": { "type": "string", "enum": ["game_launch", "comment_post", "match_finish", "achievement"] },
+        "targetId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "pointsDelta": { "type": "number" },
+        "xpDelta": { "type": "number" },
+        "gamesPlayedDelta": { "type": "number" },
+        "winsDelta": { "type": "number" },
+        "serverReceipt": { "type": "string", "maxLength": 256, "pattern": "^v2\\.[a-f0-9]{32}\\.[0-9]{10,16}\\.[a-f0-9]{64}$" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "claimType", "targetId", "pointsDelta", "xpDelta", "gamesPlayedDelta", "winsDelta", "serverReceipt", "createdAt"]
+    },
+    "NotificationRead": {
+      "title": "Per-User Notification Read Receipt",
+      "description": "Tracks read status of broadcast and personal notifications per user",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "maxLength": 256, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "userId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "notificationId": { "type": "string", "maxLength": 128, "pattern": "^[a-zA-Z0-9_\\-]+$" },
+        "readAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "userId", "notificationId", "readAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "User profile documents (PII isolated to owner and admin)"
+    },
+    "/userStats/{userId}": {
+      "schema": { "$ref": "#/entities/UserStats" },
+      "description": "Public non-PII player stats, XP, achievements, and online presence"
+    },
+    "/rewardClaims/{claimId}": {
+      "schema": { "$ref": "#/entities/RewardClaim" },
+      "description": "Immutable unique reward claims enforcing anti-duplication"
+    },
+    "/achievements/{achievementId}": {
+      "schema": { "$ref": "#/entities/Achievement" },
+      "description": "Unlockable platform achievements and point rewards"
+    },
+    "/content/{contentId}": {
+      "schema": { "$ref": "#/entities/ContentItem" },
+      "description": "Platform creative content catalog"
+    },
+    "/sections/{sectionId}": {
+      "schema": { "$ref": "#/entities/Section" },
+      "description": "Dynamic homepage section definitions"
+    },
+    "/categories/{catId}": {
+      "schema": { "$ref": "#/entities/GameCategory" },
+      "description": "Content and game classification categories"
+    },
+    "/settings/{docId}": {
+      "schema": { "$ref": "#/entities/PlatformSettings" },
+      "description": "Global platform configuration"
+    },
+    "/comments/{commentId}": {
+      "schema": { "$ref": "#/entities/Comment" },
+      "description": "User commentary and moderation metadata"
+    },
+    "/favorites/{favoriteId}": {
+      "schema": { "$ref": "#/entities/Favorite" },
+      "description": "User saved content favorites"
+    },
+    "/likes/{likeId}": {
+      "schema": { "$ref": "#/entities/Like" },
+      "description": "Deterministic per-user content likes"
+    },
+    "/notifications/{notificationId}": {
+      "schema": { "$ref": "#/entities/Notification" },
+      "description": "Platform release and user reply notifications"
+    },
+    "/notificationReads/{readId}": {
+      "schema": { "$ref": "#/entities/NotificationRead" },
+      "description": "Per-user read receipts for broadcast and personal notifications"
+    },
+    "/rooms/{roomId}": {
+      "schema": { "$ref": "#/entities/GameRoom" },
+      "description": "Multiplayer game lobby rooms"
+    },
+    "/rooms/{roomId}/players/{playerId}": {
+      "schema": { "$ref": "#/entities/RoomPlayer" },
+      "description": "Connected players inside a multiplayer room"
+    },
+    "/rooms/{roomId}/messages/{messageId}": {
+      "schema": { "$ref": "#/entities/RoomMessage" },
+      "description": "In-room chat messages"
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Trusted administrator directory"
+    }
+  }
+}

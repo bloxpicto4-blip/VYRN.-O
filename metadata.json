@@ -1,0 +1,8 @@
+{
+  "name": "VYRN — منصة وعالم إبداعي متكامل",
+  "description": "عالم تصنعه بنفسك. منصة إبداعية متطورة تجمع الألعاب، التطبيقات البرمجية، المشاريع الهندسية، المنشورات والكتب، وحلقات البودكاست في وجهة رقمية استثنائية واحدة.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

@@ -1,0 +1,58 @@
+@import "tailwindcss";
+
+@layer base {
+  :root {
+    --color-carbon: #191A17;
+    --color-molten: #FF5A1F;
+    --color-lime: #D7FF38;
+    --color-ivory: #F2EBDD;
+  }
+
+  body {
+    font-family: 'Cairo', system-ui, -apple-system, sans-serif;
+    background-color: #191A17;
+    color: #F2EBDD;
+    overflow-x: hidden;
+    direction: rtl;
+    text-align: right;
+  }
+
+  code, pre, .font-mono {
+    font-family: 'JetBrains Mono', monospace;
+    direction: ltr;
+    display: inline-block;
+  }
+}
+
+/* Custom scrollbar for sleek creative dark UI */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #141512;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #2D302A;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #FF5A1F;
+}
+
+/* Subtle glow utility classes without over-neon */
+.glow-molten {
+  box-shadow: 0 0 25px -5px rgba(255, 90, 31, 0.25);
+}
+
+.glow-lime {
+  box-shadow: 0 0 25px -5px rgba(215, 255, 56, 0.2);
+}
+
+/* RTL Arrow Flipping where required */
+[dir="rtl"] .rtl-flip {
+  transform: scaleX(-1);
+}

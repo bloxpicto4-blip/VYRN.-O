@@ -1,0 +1,1047 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // Pillar 1: Global default-deny safety net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // =========================================================================
+    // Global Hardened Primitives
+    // =========================================================================
+    function isValidId(id) {
+      return id is string && id.size() > 0 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isValidLongId(id) {
+      return id is string && id.size() > 0 && id.size() <= 256 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isVerifiedUser() {
+      return isSignedIn() && (
+        request.auth.token.email_verified == true ||
+        request.auth.token.firebase.sign_in_provider == 'password'
+      );
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function isTokenAdmin() {
+      return isSignedIn() &&
+        request.auth.token.email_verified == true &&
+        request.auth.token.email == 'bidamohammed412@gmail.com';
+    }
+
+    function isAdmin() {
+      return isSignedIn() && (
+        (request.auth.token.email_verified == true && request.auth.token.email == 'bidamohammed412@gmail.com') ||
+        exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+      );
+    }
+
+    function isApprovedUser() {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/users/$(request.auth.uid)) &&
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isApproved == true;
+    }
+
+    function isOptionalString(data, field, maxLen) {
+      return !(field in data) || (data[field] is string && data[field].size() <= maxLen);
+    }
+
+    function isOptionalBool(data, field) {
+      return !(field in data) || (data[field] is bool);
+    }
+
+    function isOptionalNonNegNumber(data, field) {
+      return !(field in data) || ((data[field] is int || data[field] is float) && data[field] >= 0);
+    }
+
+    function isBoundedStringList(data, field, maxItems, maxItemLen) {
+      return !(field in data) || (
+        data[field] is list &&
+        data[field].size() <= maxItems &&
+        (data[field].size() == 0 || (data[field][0] is string && data[field][0].size() <= maxItemLen))
+      );
+    }
+
+    // =========================================================================
+    // Validation Blueprints (Anti-Update-Gap Helpers)
+    // =========================================================================
+    function isValidUser(data) {
+      return data.keys().hasAll(['id', 'username', 'role', 'isApproved', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'username', 'displayName', 'email', 'role', 'isApproved',
+          'avatarUrl', 'bio', 'mustChangePassword', 'privacySettings', 'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.username is string && data.username.size() >= 1 && data.username.size() <= 50 &&
+        isOptionalString(data, 'displayName', 100) &&
+        isOptionalString(data, 'email', 200) &&
+        data.role in ['admin', 'member', 'approved'] &&
+        data.isApproved is bool &&
+        isOptionalString(data, 'avatarUrl', 1000) &&
+        isOptionalString(data, 'bio', 1000) &&
+        isOptionalBool(data, 'mustChangePassword') &&
+        (!('privacySettings' in data) || (
+          data.privacySettings is map &&
+          data.privacySettings.keys().hasOnly(['showFavorites', 'showActivity']) &&
+          isOptionalBool(data.privacySettings, 'showFavorites') &&
+          isOptionalBool(data.privacySettings, 'showActivity')
+        )) &&
+        data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidUserStats(data) {
+      return data.keys().hasAll(['userId', 'displayName', 'points', 'xp', 'level', 'gamesPlayed', 'winsCount', 'isOnline', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'userId', 'displayName', 'avatarUrl', 'points', 'xp', 'level',
+          'gamesPlayed', 'winsCount', 'unlockedAchievements', 'isOnline',
+          'currentRoomId', 'lastClaimId', 'lastSeenAt', 'updatedAt'
+        ]) &&
+        isValidId(data.userId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        isOptionalString(data, 'avatarUrl', 1000) &&
+        (data.points is int || data.points is float) && data.points >= 0 && data.points <= 1000000 &&
+        (data.xp is int || data.xp is float) && data.xp >= 0 && data.xp <= 1000000 &&
+        (data.level is int || data.level is float) && data.level >= 1 && data.level <= 100 &&
+        (data.gamesPlayed is int || data.gamesPlayed is float) && data.gamesPlayed >= 0 && data.gamesPlayed <= 100000 &&
+        (data.winsCount is int || data.winsCount is float) && data.winsCount >= 0 && data.winsCount <= 100000 &&
+        isBoundedStringList(data, 'unlockedAchievements', 50, 128) &&
+        data.isOnline is bool &&
+        isOptionalString(data, 'currentRoomId', 128) &&
+        isOptionalString(data, 'lastClaimId', 256) &&
+        (!('lastSeenAt' in data) || data.lastSeenAt is timestamp) &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRewardClaim(data) {
+      return data.keys().hasAll(['id', 'userId', 'claimType', 'targetId', 'pointsDelta', 'xpDelta', 'gamesPlayedDelta', 'winsDelta', 'serverReceipt', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'userId', 'claimType', 'targetId',
+          'pointsDelta', 'xpDelta', 'gamesPlayedDelta', 'winsDelta',
+          'serverReceipt', 'createdAt'
+        ]) &&
+        isValidLongId(data.id) &&
+        isValidId(data.userId) &&
+        data.claimType in ['game_launch', 'comment_post', 'match_finish', 'achievement'] &&
+        isValidId(data.targetId) &&
+        (data.pointsDelta is int || data.pointsDelta is float) && data.pointsDelta >= 0 && data.pointsDelta <= 5000 &&
+        (data.xpDelta is int || data.xpDelta is float) && data.xpDelta >= 0 && data.xpDelta <= 5000 &&
+        (data.gamesPlayedDelta is int || data.gamesPlayedDelta is float) && data.gamesPlayedDelta >= 0 && data.gamesPlayedDelta <= 1 &&
+        (data.winsDelta is int || data.winsDelta is float) && data.winsDelta >= 0 && data.winsDelta <= 1 &&
+        data.serverReceipt is string &&
+        data.serverReceipt.size() >= 64 &&
+        data.serverReceipt.size() <= 256 &&
+        data.serverReceipt.matches('^v2\\.[a-f0-9]{32}\\.[0-9]{10,16}\\.[a-f0-9]{64}$') &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidAchievement(data) {
+      return data.keys().hasAll(['id', 'title', 'pointsReward', 'category', 'requirementType', 'requirementTarget', 'isActive']) &&
+        data.keys().hasOnly(['id', 'title', 'description', 'icon', 'pointsReward', 'category', 'requirementType', 'requirementTarget', 'isActive']) &&
+        isValidId(data.id) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        isOptionalString(data, 'description', 400) &&
+        isOptionalString(data, 'icon', 40) &&
+        (data.pointsReward is int || data.pointsReward is float) && data.pointsReward >= 0 && data.pointsReward <= 5000 &&
+        data.category in ['play', 'social', 'multiplayer', 'collector'] &&
+        data.requirementType in ['games_played', 'wins_count', 'comments_count', 'favorites_count', 'points_total', 'rooms_joined'] &&
+        (data.requirementTarget is int || data.requirementTarget is float) && data.requirementTarget >= 1 && data.requirementTarget <= 100000 &&
+        data.isActive is bool;
+    }
+
+    function isValidContentItem(data) {
+      return data.keys().hasAll(['id', 'title', 'slug', 'type', 'category', 'coverImage', 'status', 'audience', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'title', 'slug', 'description', 'summary', 'type', 'category',
+          'coverImage', 'galleryImages', 'bannerImage', 'status', 'audience',
+          'creator', 'isFeatured', 'isEditorsPick', 'likesCount', 'viewsCount',
+          'downloadsCount', 'commentsEnabled', 'tags', 'newBadge', 'customFields',
+          'gameConfig', 'appConfig', 'projectConfig', 'bookConfig', 'podcastConfig',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 200 &&
+        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 200 &&
+        isOptionalString(data, 'description', 5000) &&
+        isOptionalString(data, 'summary', 500) &&
+        data.type in ['game', 'app', 'project', 'book', 'podcast'] &&
+        data.category is string && data.category.size() >= 1 && data.category.size() <= 100 &&
+        data.coverImage is string && data.coverImage.size() <= 2000 &&
+        isBoundedStringList(data, 'galleryImages', 20, 2000) &&
+        isOptionalString(data, 'bannerImage', 2000) &&
+        data.status in ['published', 'draft', 'archived'] &&
+        data.audience in ['public', 'members', 'approved'] &&
+        isOptionalString(data, 'creator', 100) &&
+        isOptionalBool(data, 'isFeatured') &&
+        isOptionalBool(data, 'isEditorsPick') &&
+        isOptionalNonNegNumber(data, 'likesCount') &&
+        isOptionalNonNegNumber(data, 'viewsCount') &&
+        isOptionalNonNegNumber(data, 'downloadsCount') &&
+        isOptionalBool(data, 'commentsEnabled') &&
+        isBoundedStringList(data, 'tags', 20, 50) &&
+        (!('newBadge' in data) || data.newBadge is map) &&
+        (!('customFields' in data) || data.customFields is map) &&
+        (!('gameConfig' in data) || data.gameConfig is map) &&
+        (!('appConfig' in data) || data.appConfig is map) &&
+        (!('projectConfig' in data) || data.projectConfig is map) &&
+        (!('bookConfig' in data) || data.bookConfig is map) &&
+        (!('podcastConfig' in data) || data.podcastConfig is map) &&
+        data.createdAt is timestamp &&
+        (!('updatedAt' in data) || data.updatedAt is timestamp);
+    }
+
+    function isValidSection(data) {
+      return data.keys().hasAll(['id', 'name', 'slug', 'accentColor', 'layoutType', 'filterType', 'sortOrder', 'isEnabled']) &&
+        data.keys().hasOnly([
+          'id', 'name', 'slug', 'description', 'icon', 'coverImage', 'bannerImage',
+          'accentColor', 'layoutType', 'filterType', 'categoryTarget', 'customItemIds',
+          'sortOrder', 'isEnabled', 'isDraft', 'audience'
+        ]) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 100 &&
+        isOptionalString(data, 'description', 500) &&
+        isOptionalString(data, 'icon', 100) &&
+        isOptionalString(data, 'coverImage', 2000) &&
+        isOptionalString(data, 'bannerImage', 2000) &&
+        data.accentColor is string && data.accentColor.size() <= 30 &&
+        data.layoutType in ['carousel', 'editorial', 'bento', 'grid', 'media_showcase'] &&
+        data.filterType in ['all', 'featured', 'fresh_drops', 'hidden_gems', 'editors_picks', 'category', 'custom'] &&
+        isOptionalString(data, 'categoryTarget', 100) &&
+        isBoundedStringList(data, 'customItemIds', 50, 128) &&
+        (data.sortOrder is int || data.sortOrder is float) &&
+        data.isEnabled is bool &&
+        isOptionalBool(data, 'isDraft') &&
+        (!('audience' in data) || data.audience in ['public', 'members', 'approved']);
+    }
+
+    function isValidCategory(data) {
+      return data.keys().hasAll(['id', 'name', 'slug', 'type']) &&
+        data.keys().hasOnly(['id', 'name', 'slug', 'type', 'description']) &&
+        isValidId(data.id) &&
+        data.name is string && data.name.size() >= 1 && data.name.size() <= 100 &&
+        data.slug is string && data.slug.size() >= 1 && data.slug.size() <= 100 &&
+        data.type in ['game', 'app', 'project', 'book', 'podcast'] &&
+        isOptionalString(data, 'description', 500);
+    }
+
+    function isValidSettings(data) {
+      return data.keys().hasAll([
+          'brandName', 'brandTagline', 'primaryAccent', 'showIntroAnimation',
+          'allowGuestInteractions', 'commentModerationRequired', 'maintenanceMode'
+        ]) &&
+        data.keys().hasOnly([
+          'brandName', 'brandTagline', 'primaryAccent', 'secondaryAccent',
+          'showIntroAnimation', 'allowGuestInteractions', 'commentModerationRequired',
+          'maintenanceMode'
+        ]) &&
+        data.brandName is string && data.brandName.size() >= 1 && data.brandName.size() <= 60 &&
+        data.brandTagline is string && data.brandTagline.size() <= 200 &&
+        data.primaryAccent is string && data.primaryAccent.size() <= 30 &&
+        isOptionalString(data, 'secondaryAccent', 30) &&
+        data.showIntroAnimation is bool &&
+        data.allowGuestInteractions is bool &&
+        data.commentModerationRequired is bool &&
+        data.maintenanceMode is bool;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['id', 'contentId', 'userId', 'content', 'isApproved', 'isReported', 'createdAt']) &&
+        data.keys().hasOnly([
+          'id', 'contentId', 'userId', 'username', 'userDisplayName', 'userAvatar',
+          'content', 'parentId', 'isApproved', 'isReported', 'reportReason',
+          'likesCount', 'createdAt'
+        ]) &&
+        isValidId(data.id) &&
+        isValidId(data.contentId) &&
+        isValidId(data.userId) &&
+        isOptionalString(data, 'username', 50) &&
+        isOptionalString(data, 'userDisplayName', 100) &&
+        isOptionalString(data, 'userAvatar', 1000) &&
+        data.content is string && data.content.size() >= 1 && data.content.size() <= 1500 &&
+        (!('parentId' in data) || data.parentId == null || isValidId(data.parentId)) &&
+        data.isApproved is bool &&
+        data.isReported is bool &&
+        isOptionalString(data, 'reportReason', 500) &&
+        isOptionalNonNegNumber(data, 'likesCount') &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidUserContentLink(data) {
+      return data.keys().hasAll(['id', 'userId', 'contentId', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'contentId', 'createdAt']) &&
+        isValidLongId(data.id) &&
+        isValidId(data.userId) &&
+        isValidId(data.contentId) &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotification(data) {
+      return data.keys().hasAll(['id', 'userId', 'title', 'message', 'type', 'isRead', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'title', 'message', 'linkUrl', 'type', 'isRead', 'createdAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.userId) &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 160 &&
+        data.message is string && data.message.size() >= 1 && data.message.size() <= 500 &&
+        isOptionalString(data, 'linkUrl', 500) &&
+        data.type in ['system', 'reply', 'release', 'announcement'] &&
+        data.isRead is bool &&
+        data.createdAt is timestamp;
+    }
+
+    function isValidNotificationRead(data) {
+      return data.keys().hasAll(['id', 'userId', 'notificationId', 'readAt']) &&
+        data.keys().hasOnly(['id', 'userId', 'notificationId', 'readAt']) &&
+        isValidLongId(data.id) &&
+        isValidId(data.userId) &&
+        isValidId(data.notificationId) &&
+        data.readAt is timestamp;
+    }
+
+    function isValidRoom(data) {
+      return data.keys().hasAll(['id', 'code', 'title', 'gameTitle', 'hostId', 'hostName', 'status', 'maxPlayers', 'isPrivate', 'playerCount', 'createdAt', 'updatedAt']) &&
+        data.keys().hasOnly([
+          'id', 'code', 'title', 'gameId', 'gameTitle', 'hostId', 'hostName',
+          'status', 'maxPlayers', 'isPrivate', 'playerCount', 'winnerId',
+          'createdAt', 'updatedAt'
+        ]) &&
+        isValidId(data.id) &&
+        data.code is string && data.code.size() >= 4 && data.code.size() <= 16 &&
+        data.title is string && data.title.size() >= 1 && data.title.size() <= 120 &&
+        isOptionalString(data, 'gameId', 128) &&
+        data.gameTitle is string && data.gameTitle.size() >= 1 && data.gameTitle.size() <= 160 &&
+        isValidId(data.hostId) &&
+        data.hostName is string && data.hostName.size() >= 1 && data.hostName.size() <= 100 &&
+        data.status in ['waiting', 'playing', 'finished'] &&
+        (data.maxPlayers is int || data.maxPlayers is float) && data.maxPlayers >= 2 && data.maxPlayers <= 16 &&
+        data.isPrivate is bool &&
+        (data.playerCount is int || data.playerCount is float) && data.playerCount >= 0 && data.playerCount <= 16 &&
+        isOptionalString(data, 'winnerId', 128) &&
+        data.createdAt is timestamp &&
+        data.updatedAt is timestamp;
+    }
+
+    function isValidRoomPlayer(data) {
+      return data.keys().hasAll(['id', 'roomId', 'displayName', 'isReady', 'score', 'joinedAt', 'lastPingAt']) &&
+        data.keys().hasOnly(['id', 'roomId', 'displayName', 'avatarUrl', 'isReady', 'score', 'joinedAt', 'lastPingAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.roomId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        isOptionalString(data, 'avatarUrl', 1000) &&
+        data.isReady is bool &&
+        (data.score is int || data.score is float) && data.score >= 0 && data.score <= 1000000 &&
+        data.joinedAt is timestamp &&
+        data.lastPingAt is timestamp;
+    }
+
+    function isValidRoomMessage(data) {
+      return data.keys().hasAll(['id', 'roomId', 'userId', 'displayName', 'content', 'createdAt']) &&
+        data.keys().hasOnly(['id', 'roomId', 'userId', 'displayName', 'content', 'createdAt']) &&
+        isValidId(data.id) &&
+        isValidId(data.roomId) &&
+        isValidId(data.userId) &&
+        data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 100 &&
+        data.content is string && data.content.size() >= 1 && data.content.size() <= 500 &&
+        data.createdAt is timestamp;
+    }
+
+    // =========================================================================
+    // Collection Rules
+    // =========================================================================
+
+    // Users Collection (PII isolated strictly to owner or verified admin)
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isSignedIn() && (existing().id == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUser(incoming()) &&
+        incoming().id == userId &&
+        incoming().createdAt == request.time &&
+        (
+          isAdmin() ||
+          (isOwner(userId) && incoming().role == 'member' && incoming().isApproved == false)
+        );
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUser(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().role == existing().role &&
+            incoming().isApproved == existing().isApproved &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'bio', 'avatarUrl', 'privacySettings', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // Public Player Stats, Points, Achievements & Presence (Non-PII)
+    // Direct client mutations to points/xp/level/gamesPlayed/winsCount/unlockedAchievements are strictly BLOCKED.
+    // Stat increments require an atomic paired /rewardClaims/{claimId} ledger entry verified by rules.
+    match /userStats/{userId} {
+      allow get: if isValidId(userId) && existing().isOnline in [true, false];
+      allow list: if existing().isOnline in [true, false];
+
+      allow create: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserStats(incoming()) &&
+        incoming().userId == userId &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isOwner(userId) &&
+            incoming().points == 0 &&
+            incoming().xp == 0 &&
+            incoming().level == 1 &&
+            incoming().gamesPlayed == 0 &&
+            incoming().winsCount == 0 &&
+            (!('unlockedAchievements' in incoming()) || incoming().unlockedAchievements.size() == 0) &&
+            !('lastClaimId' in incoming())
+          )
+        );
+
+      allow update: if isVerifiedUser() &&
+        isValidId(userId) &&
+        isValidUserStats(incoming()) &&
+        incoming().userId == existing().userId &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            // Presence / display-only update (zero stat modification)
+            isOwner(userId) &&
+            incoming().points == existing().points &&
+            incoming().xp == existing().xp &&
+            incoming().level == existing().level &&
+            incoming().gamesPlayed == existing().gamesPlayed &&
+            incoming().winsCount == existing().winsCount &&
+            (!('unlockedAchievements' in existing()) ? (!('unlockedAchievements' in incoming()) || incoming().unlockedAchievements.size() == 0) : incoming().unlockedAchievements == existing().unlockedAchievements) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'avatarUrl', 'isOnline', 'currentRoomId', 'lastSeenAt', 'updatedAt'
+            ])
+          ) ||
+          (
+            // Atomic reward claim paired strictly with a single-use /rewardClaims/{claimId} document
+            isOwner(userId) &&
+            'lastClaimId' in incoming() &&
+            isValidLongId(incoming().lastClaimId) &&
+            !exists(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)) &&
+            existsAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)) &&
+            getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.userId == request.auth.uid &&
+            incoming().points == existing().points + getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.pointsDelta &&
+            incoming().xp == existing().xp + getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.xpDelta &&
+            incoming().gamesPlayed == existing().gamesPlayed + getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.gamesPlayedDelta &&
+            incoming().winsCount == existing().winsCount + getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.winsDelta &&
+            incoming().level >= existing().level &&
+            incoming().level <= 100 &&
+            (!('unlockedAchievements' in existing()) || incoming().unlockedAchievements.hasAll(existing().unlockedAchievements)) &&
+            (
+              (
+                getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.claimType == 'achievement' &&
+                incoming().unlockedAchievements is list &&
+                incoming().unlockedAchievements.size() == (('unlockedAchievements' in existing()) ? existing().unlockedAchievements.size() : 0) + 1 &&
+                getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.targetId in incoming().unlockedAchievements
+              ) ||
+              (
+                getAfter(/databases/$(database)/documents/rewardClaims/$(incoming().lastClaimId)).data.claimType != 'achievement' &&
+                (!('unlockedAchievements' in existing()) ? (!('unlockedAchievements' in incoming()) || incoming().unlockedAchievements.size() == 0) : incoming().unlockedAchievements == existing().unlockedAchievements)
+              )
+            ) &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'points', 'xp', 'level', 'gamesPlayed', 'winsCount',
+              'unlockedAchievements', 'lastClaimId', 'lastSeenAt', 'updatedAt'
+            ])
+          )
+        );
+
+      allow delete: if isValidId(userId) && isAdmin();
+    }
+
+    // Immutable Deterministic Reward Claims Ledger (Prevents duplicate claims & tampering)
+    match /rewardClaims/{claimId} {
+      allow get: if isValidLongId(claimId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidLongId(claimId) &&
+        isValidRewardClaim(incoming()) &&
+        incoming().id == claimId &&
+        incoming().userId == request.auth.uid &&
+        incoming().createdAt == request.time &&
+        existsAfter(/databases/$(database)/documents/userStats/$(request.auth.uid)) &&
+        getAfter(/databases/$(database)/documents/userStats/$(request.auth.uid)).data.lastClaimId == claimId &&
+        (
+          (
+            incoming().claimType == 'game_launch' &&
+            claimId == ('launch_' + request.auth.uid + '_' + incoming().targetId) &&
+            exists(/databases/$(database)/documents/content/$(incoming().targetId)) &&
+            get(/databases/$(database)/documents/content/$(incoming().targetId)).data.status == 'published' &&
+            incoming().pointsDelta == 15 &&
+            incoming().xpDelta == 20 &&
+            incoming().gamesPlayedDelta == 1 &&
+            incoming().winsDelta == 0
+          ) ||
+          (
+            incoming().claimType == 'comment_post' &&
+            claimId == ('comment_' + request.auth.uid + '_' + incoming().targetId) &&
+            exists(/databases/$(database)/documents/comments/$(incoming().targetId)) &&
+            get(/databases/$(database)/documents/comments/$(incoming().targetId)).data.userId == request.auth.uid &&
+            incoming().pointsDelta == 10 &&
+            incoming().xpDelta == 15 &&
+            incoming().gamesPlayedDelta == 0 &&
+            incoming().winsDelta == 0
+          ) ||
+          (
+            incoming().claimType == 'match_finish' &&
+            claimId == ('match_' + request.auth.uid + '_' + incoming().targetId) &&
+            exists(/databases/$(database)/documents/rooms/$(incoming().targetId)) &&
+            get(/databases/$(database)/documents/rooms/$(incoming().targetId)).data.status == 'finished' &&
+            get(/databases/$(database)/documents/rooms/$(incoming().targetId)).data.playerCount >= 2 &&
+            exists(/databases/$(database)/documents/rooms/$(incoming().targetId)/players/$(request.auth.uid)) &&
+            (
+              (
+                get(/databases/$(database)/documents/rooms/$(incoming().targetId)).data.winnerId == request.auth.uid &&
+                incoming().pointsDelta == 120 &&
+                incoming().xpDelta == 150 &&
+                incoming().gamesPlayedDelta == 1 &&
+                incoming().winsDelta == 1
+              ) ||
+              (
+                get(/databases/$(database)/documents/rooms/$(incoming().targetId)).data.winnerId != request.auth.uid &&
+                incoming().pointsDelta == 30 &&
+                incoming().xpDelta == 50 &&
+                incoming().gamesPlayedDelta == 1 &&
+                incoming().winsDelta == 0
+              )
+            )
+          ) ||
+          (
+            incoming().claimType == 'achievement' &&
+            claimId == ('ach_' + request.auth.uid + '_' + incoming().targetId) &&
+            exists(/databases/$(database)/documents/achievements/$(incoming().targetId)) &&
+            get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.isActive == true &&
+            incoming().pointsDelta == get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.pointsReward &&
+            incoming().xpDelta == incoming().pointsDelta &&
+            incoming().gamesPlayedDelta == 0 &&
+            incoming().winsDelta == 0 &&
+            (
+              get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementType != 'games_played' ||
+              get(/databases/$(database)/documents/userStats/$(request.auth.uid)).data.gamesPlayed >= get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementTarget
+            ) &&
+            (
+              get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementType != 'wins_count' ||
+              get(/databases/$(database)/documents/userStats/$(request.auth.uid)).data.winsCount >= get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementTarget
+            ) &&
+            (
+              get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementType != 'points_total' ||
+              get(/databases/$(database)/documents/userStats/$(request.auth.uid)).data.points >= get(/databases/$(database)/documents/achievements/$(incoming().targetId)).data.requirementTarget
+            )
+          )
+        );
+
+      allow update, delete: if false;
+    }
+
+    // Achievements Catalog (Public Read, Admin Write)
+    match /achievements/{achievementId} {
+      allow get: if isValidId(achievementId) && existing().isActive in [true, false];
+      allow list: if existing().isActive in [true, false];
+
+      allow create: if isAdmin() &&
+        isValidId(achievementId) &&
+        isValidAchievement(incoming()) &&
+        incoming().id == achievementId;
+
+      allow update: if isAdmin() &&
+        isValidId(achievementId) &&
+        isValidAchievement(incoming()) &&
+        incoming().id == existing().id;
+
+      allow delete: if isValidId(achievementId) && isAdmin();
+    }
+
+    // Content Collection (Public catalog for published items; atomic like & counter increments)
+    match /content/{contentId} {
+      allow get: if isValidId(contentId) && (
+        (existing().status == 'published' && existing().audience == 'public') ||
+        (isSignedIn() && existing().status == 'published' && existing().audience == 'members') ||
+        (isApprovedUser() && existing().status == 'published' && existing().audience == 'approved') ||
+        isAdmin()
+      );
+      allow list: if (
+        (existing().status == 'published' && existing().audience == 'public') ||
+        (isSignedIn() && existing().status == 'published' && existing().audience in ['members', 'approved']) ||
+        isTokenAdmin()
+      );
+
+      allow create: if isAdmin() &&
+        isValidId(contentId) &&
+        isValidContentItem(incoming()) &&
+        incoming().id == contentId &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isValidId(contentId) &&
+        isValidContentItem(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          (
+            isAdmin() &&
+            incoming().updatedAt == request.time &&
+            incoming().diff(existing()).affectedKeys().hasOnly([
+              'title', 'slug', 'description', 'summary', 'type', 'category',
+              'coverImage', 'galleryImages', 'bannerImage', 'status', 'audience',
+              'creator', 'isFeatured', 'isEditorsPick', 'likesCount', 'viewsCount',
+              'downloadsCount', 'commentsEnabled', 'tags', 'newBadge', 'customFields',
+              'gameConfig', 'appConfig', 'projectConfig', 'bookConfig', 'podcastConfig',
+              'updatedAt'
+            ])
+          ) ||
+          // Atomic Like Toggle paired with deterministic /likes/{contentId}_{uid} document
+          (
+            isVerifiedUser() &&
+            existing().status == 'published' &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['likesCount']) &&
+            (
+              (
+                incoming().likesCount == existing().likesCount + 1 &&
+                existsAfter(/databases/$(database)/documents/likes/$(contentId + '_' + request.auth.uid)) &&
+                !exists(/databases/$(database)/documents/likes/$(contentId + '_' + request.auth.uid))
+              ) ||
+              (
+                existing().likesCount >= 1 &&
+                incoming().likesCount == existing().likesCount - 1 &&
+                !existsAfter(/databases/$(database)/documents/likes/$(contentId + '_' + request.auth.uid)) &&
+                exists(/databases/$(database)/documents/likes/$(contentId + '_' + request.auth.uid))
+              )
+            )
+          ) ||
+          // Monotonic +1 views/downloads counter for verified users
+          (
+            isVerifiedUser() &&
+            existing().status == 'published' &&
+            (
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['viewsCount']) &&
+                incoming().viewsCount == existing().viewsCount + 1
+              ) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['downloadsCount']) &&
+                incoming().downloadsCount == existing().downloadsCount + 1
+              )
+            )
+          )
+        );
+
+      allow delete: if isValidId(contentId) && isAdmin();
+    }
+
+    // Dynamic Sections Collection
+    match /sections/{sectionId} {
+      allow get: if isValidId(sectionId) && (
+        (existing().isEnabled == true && existing().isDraft != true && existing().audience == 'public') ||
+        (isSignedIn() && existing().isEnabled == true && existing().isDraft != true && existing().audience == 'members') ||
+        (isApprovedUser() && existing().isEnabled == true && existing().isDraft != true && existing().audience == 'approved') ||
+        isAdmin()
+      );
+      allow list: if (
+        (existing().isEnabled == true && existing().isDraft != true && existing().audience == 'public') ||
+        (isSignedIn() && existing().isEnabled == true && existing().isDraft != true) ||
+        isTokenAdmin()
+      );
+
+      allow create: if isAdmin() &&
+        isValidId(sectionId) &&
+        isValidSection(incoming()) &&
+        incoming().id == sectionId;
+
+      allow update: if isAdmin() &&
+        isValidId(sectionId) &&
+        isValidSection(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'name', 'slug', 'description', 'icon', 'coverImage', 'bannerImage',
+          'accentColor', 'layoutType', 'filterType', 'categoryTarget',
+          'customItemIds', 'sortOrder', 'isEnabled', 'isDraft', 'audience'
+        ]);
+
+      allow delete: if isValidId(sectionId) && isAdmin();
+    }
+
+    // Categories Collection (Public taxonomy, Admin-managed writes)
+    match /categories/{catId} {
+      allow get: if isValidId(catId) && existing().type in ['game', 'app', 'project', 'book', 'podcast'];
+      allow list: if existing().type in ['game', 'app', 'project', 'book', 'podcast'];
+
+      allow create: if isAdmin() &&
+        isValidId(catId) &&
+        isValidCategory(incoming()) &&
+        incoming().id == catId;
+
+      allow update: if isAdmin() &&
+        isValidId(catId) &&
+        isValidCategory(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().diff(existing()).affectedKeys().hasOnly(['name', 'slug', 'type', 'description']);
+
+      allow delete: if isValidId(catId) && isAdmin();
+    }
+
+    // Platform Settings Collection (Single global doc, Admin-managed writes)
+    match /settings/{docId} {
+      allow get: if isValidId(docId) && docId == 'global';
+      allow list: if false;
+
+      allow create: if isAdmin() &&
+        isValidId(docId) &&
+        docId == 'global' &&
+        isValidSettings(incoming());
+
+      allow update: if isAdmin() &&
+        isValidId(docId) &&
+        docId == 'global' &&
+        isValidSettings(incoming()) &&
+        incoming().diff(existing()).affectedKeys().hasOnly([
+          'brandName', 'brandTagline', 'primaryAccent', 'secondaryAccent',
+          'showIntroAnimation', 'allowGuestInteractions', 'commentModerationRequired',
+          'maintenanceMode'
+        ]);
+
+      allow delete: if false;
+    }
+
+    // Comments Collection
+    match /comments/{commentId} {
+      allow get: if isValidId(commentId) && (
+        existing().isApproved == true ||
+        (isSignedIn() && existing().userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if (
+        existing().isApproved == true ||
+        (isSignedIn() && existing().userId == request.auth.uid) ||
+        isTokenAdmin()
+      );
+
+      allow create: if isVerifiedUser() &&
+        isValidId(commentId) &&
+        isValidComment(incoming()) &&
+        incoming().id == commentId &&
+        incoming().userId == request.auth.uid &&
+        incoming().isReported == false &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/content/$(incoming().contentId));
+
+      allow update: if isVerifiedUser() &&
+        isValidId(commentId) &&
+        isValidComment(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().contentId == existing().contentId &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['content'])
+          ) ||
+          (
+            existing().isReported == false &&
+            incoming().isReported == true &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['isReported', 'reportReason'])
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(commentId) &&
+        (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Favorites Collection (Private per-user bookmarks)
+    match /favorites/{favoriteId} {
+      allow get: if isValidLongId(favoriteId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidLongId(favoriteId) &&
+        isValidUserContentLink(incoming()) &&
+        incoming().id == favoriteId &&
+        incoming().userId == request.auth.uid &&
+        favoriteId == (request.auth.uid + '_' + incoming().contentId) &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/content/$(incoming().contentId));
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidLongId(favoriteId) &&
+        (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Likes Collection (Deterministic per-user content likes paired with content.likesCount)
+    match /likes/{likeId} {
+      allow get: if isValidLongId(likeId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidLongId(likeId) &&
+        isValidUserContentLink(incoming()) &&
+        incoming().id == likeId &&
+        incoming().userId == request.auth.uid &&
+        likeId == (incoming().contentId + '_' + request.auth.uid) &&
+        incoming().createdAt == request.time &&
+        exists(/databases/$(database)/documents/content/$(incoming().contentId));
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidLongId(likeId) &&
+        (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Notifications Collection (Global releases & user-targeted replies)
+    match /notifications/{notifId} {
+      allow get: if isValidId(notifId) && (
+        existing().userId == 'all' ||
+        (isSignedIn() && existing().userId == request.auth.uid) ||
+        isAdmin()
+      );
+      allow list: if (
+        existing().userId == 'all' ||
+        (isSignedIn() && existing().userId == request.auth.uid) ||
+        isTokenAdmin()
+      );
+
+      allow create: if isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        incoming().id == notifId &&
+        incoming().createdAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            isVerifiedUser() &&
+            incoming().type == 'reply' &&
+            incoming().userId != 'all' &&
+            incoming().isRead == false
+          )
+        );
+
+      allow update: if isVerifiedUser() &&
+        isValidId(notifId) &&
+        isValidNotification(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().userId == existing().userId &&
+        incoming().createdAt == existing().createdAt &&
+        (
+          isAdmin() ||
+          (
+            existing().userId == request.auth.uid &&
+            incoming().diff(existing()).affectedKeys().hasOnly(['isRead']) &&
+            incoming().isRead == true
+          )
+        );
+
+      allow delete: if isValidId(notifId) && isAdmin();
+    }
+
+    // Per-User Notification Read Receipts (Supports marking 'all' broadcast notifications read cleanly)
+    match /notificationReads/{readId} {
+      allow get: if isValidLongId(readId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (existing().userId == request.auth.uid || isTokenAdmin());
+
+      allow create: if isVerifiedUser() &&
+        isValidLongId(readId) &&
+        isValidNotificationRead(incoming()) &&
+        incoming().id == readId &&
+        incoming().userId == request.auth.uid &&
+        readId == (incoming().notificationId + '_' + request.auth.uid) &&
+        incoming().readAt == request.time &&
+        exists(/databases/$(database)/documents/notifications/$(incoming().notificationId));
+
+      allow update: if false;
+
+      allow delete: if isVerifiedUser() &&
+        isValidLongId(readId) &&
+        (existing().userId == request.auth.uid || isAdmin());
+    }
+
+    // Multiplayer Game Rooms Collection & Subcollections
+    match /rooms/{roomId} {
+      allow get: if isValidId(roomId) && existing().status in ['waiting', 'playing', 'finished'];
+      allow list: if existing().status in ['waiting', 'playing', 'finished'];
+
+      allow create: if isVerifiedUser() &&
+        isValidId(roomId) &&
+        isValidRoom(incoming()) &&
+        incoming().id == roomId &&
+        incoming().hostId == request.auth.uid &&
+        incoming().status == 'waiting' &&
+        incoming().playerCount >= 1 &&
+        incoming().playerCount <= incoming().maxPlayers &&
+        incoming().createdAt == request.time &&
+        incoming().updatedAt == request.time;
+
+      allow update: if isVerifiedUser() &&
+        isValidId(roomId) &&
+        isValidRoom(incoming()) &&
+        incoming().id == existing().id &&
+        incoming().hostId == existing().hostId &&
+        incoming().createdAt == existing().createdAt &&
+        incoming().updatedAt == request.time &&
+        (
+          isAdmin() ||
+          (
+            existing().status != 'finished' &&
+            (
+              (
+                existing().hostId == request.auth.uid &&
+                incoming().diff(existing()).affectedKeys().hasOnly([
+                  'title', 'status', 'maxPlayers', 'playerCount', 'winnerId', 'updatedAt'
+                ]) &&
+                (
+                  incoming().status != 'finished' ||
+                  (
+                    existing().status == 'playing' &&
+                    (
+                      !('winnerId' in incoming()) ||
+                      incoming().winnerId == '' ||
+                      (
+                        existing().playerCount >= 2 &&
+                        exists(/databases/$(database)/documents/rooms/$(roomId)/players/$(incoming().winnerId))
+                      )
+                    )
+                  )
+                )
+              ) ||
+              (
+                incoming().diff(existing()).affectedKeys().hasOnly(['playerCount', 'updatedAt']) &&
+                (
+                  (
+                    incoming().playerCount == existing().playerCount + 1 &&
+                    incoming().playerCount <= existing().maxPlayers &&
+                    !exists(/databases/$(database)/documents/rooms/$(roomId)/players/$(request.auth.uid)) &&
+                    existsAfter(/databases/$(database)/documents/rooms/$(roomId)/players/$(request.auth.uid))
+                  ) ||
+                  (
+                    incoming().playerCount == existing().playerCount - 1 &&
+                    incoming().playerCount >= 0 &&
+                    exists(/databases/$(database)/documents/rooms/$(roomId)/players/$(request.auth.uid)) &&
+                    !existsAfter(/databases/$(database)/documents/rooms/$(roomId)/players/$(request.auth.uid))
+                  )
+                )
+              )
+            )
+          )
+        );
+
+      allow delete: if isVerifiedUser() &&
+        isValidId(roomId) &&
+        (existing().hostId == request.auth.uid || isAdmin());
+
+      match /players/{playerId} {
+        allow get: if isValidId(playerId) && isSignedIn() && exists(/databases/$(database)/documents/rooms/$(roomId));
+        allow list: if isSignedIn() && existing().roomId == roomId;
+
+        allow create: if isVerifiedUser() &&
+          isValidId(playerId) &&
+          playerId == request.auth.uid &&
+          isValidRoomPlayer(incoming()) &&
+          incoming().id == playerId &&
+          incoming().roomId == roomId &&
+          incoming().score == 0 &&
+          incoming().joinedAt == request.time &&
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.status != 'finished';
+
+        allow update: if isVerifiedUser() &&
+          isValidId(playerId) &&
+          isValidRoomPlayer(incoming()) &&
+          incoming().id == existing().id &&
+          incoming().roomId == existing().roomId &&
+          incoming().joinedAt == existing().joinedAt &&
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.status != 'finished' &&
+          (
+            isAdmin() ||
+            (
+              playerId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['isReady', 'score', 'lastPingAt'])
+            ) ||
+            (
+              get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid &&
+              incoming().diff(existing()).affectedKeys().hasOnly(['isReady'])
+            )
+          );
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(playerId) &&
+          (
+            playerId == request.auth.uid ||
+            get(/databases/$(database)/documents/rooms/$(roomId)).data.hostId == request.auth.uid ||
+            isAdmin()
+          );
+      }
+
+      match /messages/{messageId} {
+        allow get: if isValidId(messageId) && isSignedIn() && exists(/databases/$(database)/documents/rooms/$(roomId));
+        allow list: if isSignedIn() && existing().roomId == roomId;
+
+        allow create: if isVerifiedUser() &&
+          isValidId(messageId) &&
+          isValidRoomMessage(incoming()) &&
+          incoming().id == messageId &&
+          incoming().roomId == roomId &&
+          incoming().userId == request.auth.uid &&
+          incoming().createdAt == request.time &&
+          get(/databases/$(database)/documents/rooms/$(roomId)).data.status != 'finished';
+
+        allow update: if false;
+
+        allow delete: if isVerifiedUser() &&
+          isValidId(messageId) &&
+          (existing().userId == request.auth.uid || isAdmin());
+      }
+    }
+
+    // Connection health check (read-only ping doc, no writes permitted)
+    match /test/{docId} {
+      allow get: if isValidId(docId) && docId == 'connection';
+      allow list, create, update, delete: if false;
+    }
+
+    // Admins Collection (Bootstrapped owner email manages admin directory)
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isTokenAdmin();
+      allow create, delete: if isValidId(adminId) && isTokenAdmin();
+      allow update: if false;
+    }
+  }
+}
